@@ -1,0 +1,63 @@
+name: Build from ZIP
+
+# Manual run only: Actions tab -> "Build from ZIP" -> Run workflow
+on:
+  workflow_dispatch:
+
+# Minimum permissions (read only, no release publishing)
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout (only the ZIP is needed)
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.8
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.8'
+
+      - name: Unzip project
+        run: |
+          echo "Files in repository root:"
+          ls -la
+          ZIP="$(ls -1 *.zip 2>/dev/null | head -n 1)"
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No .zip file found in the repository root. Upload the ZIP and commit it."
+            exit 1
+          fi
+          echo "Using: $ZIP"
+          unzip -q "$ZIP"
+          if [ ! -f nexusdefense/build.gradle ]; then
+            echo "ERROR: nexusdefense/build.gradle not found after unzip."
+            ls -la
+            exit 1
+          fi
+
+      - name: Build mod jar
+        working-directory: nexusdefense
+        run: gradle build --no-daemon --stacktrace 2>&1 | tee ../build.log
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexusdefense-jar
+          path: nexusdefense/build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload build log (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
